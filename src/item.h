@@ -51,6 +51,7 @@ class player;
 class recipe;
 class relic;
 struct armor_portion_data;
+struct gun_variant_data;
 struct islot_comestible;
 struct itype;
 struct mtype;
@@ -166,9 +167,9 @@ struct enum_traits<iteminfo::flags> {
 };
 
 iteminfo vol_to_info( const std::string &type, const std::string &left,
-                      const units::volume &vol, int decimal_places = 2 );
+                      const units::volume &vol, int decimal_places = 2, bool lower_is_better = true );
 iteminfo weight_to_info( const std::string &type, const std::string &left,
-                         const units::mass &weight, int decimal_places = 2 );
+                         const units::mass &weight, int decimal_places = 2, bool lower_is_better = true );
 
 inline bool is_crafting_component( const item &component );
 
@@ -334,6 +335,11 @@ class item : public visitable
         bool is_money() const;
         bool is_software() const;
         bool is_software_storage() const;
+
+        /**
+         * Returns a symbol for indicating the current dirt or fouling level for a gun.
+         */
+        std::string dirt_symbol() const;
 
         /**
          * Returns the default color of the item (e.g. @ref itype::color).
@@ -1237,6 +1243,8 @@ class item : public visitable
         /** Returns true if the item is A: is SOLID and if it B: is of type LIQUID */
         bool is_frozen_liquid() const;
 
+        /** Returns empty string if the book teach no skill */
+        std::string get_book_skill() const;
         float get_specific_heat_liquid() const;
         float get_specific_heat_solid() const;
         float get_latent_heat() const;
@@ -1798,6 +1806,27 @@ class item : public visitable
          */
         bool is_gun() const;
 
+        /**
+         * Does this item have a gun variant associated with it
+         * If check_option, the return of this is dependent on the SHOW_GUN_VARIANTS option
+         */
+        bool has_gun_variant( bool check_option = true ) const;
+
+        /**
+         * The gun variant associated with this item
+         */
+        const gun_variant_data &gun_variant() const;
+
+        /**
+         * Set the gun variant of this item
+         */
+        void set_gun_variant( const std::string &variant );
+
+        /**
+         * For debug use only
+         */
+        void clear_gun_variant();
+
         /** Quantity of energy currently loaded in tool or battery */
         units::energy energy_remaining() const;
 
@@ -2245,6 +2274,8 @@ class item : public visitable
         /** Helper for checking reloadability. **/
         bool is_reloadable_helper( const itype_id &ammo, bool now ) const;
 
+        void armor_encumbrance_info( std::vector<iteminfo> &info, int reduce_encumbrance_by = 0 ) const;
+
     public:
         enum class sizing : int {
             human_sized_human_char = 0,
@@ -2298,6 +2329,13 @@ class item : public visitable
         const mtype *corpse = nullptr;
         std::string corpse_name;       // Name of the late lamented
         std::set<matec_id> techniques; // item specific techniques
+
+        // Select a random variant from the possibilities
+        // Intended to be called when no explicit variant is set
+        void select_gun_variant();
+
+        // If the item has a gun variant, this points to it
+        const gun_variant_data *_gun_variant = nullptr;
 
         /**
          * Data for items that represent in-progress crafts.

@@ -1198,7 +1198,11 @@ class jmapgen_loot : public jmapgen_piece
             if( group.is_empty() ) {
                 // Migrations are applied to item *groups* on load, but single item spawns must be
                 // migrated individually
-                result_group.add_item_entry( item_controller->migrate_id( ity ), 100 );
+                std::string variant;
+                if( jsi.has_string( "variant" ) ) {
+                    variant = jsi.get_string( "variant" );
+                }
+                result_group.add_item_entry( item_controller->migrate_id( ity ), 100, variant );
             } else {
                 result_group.add_group_entry( group, 100 );
             }
@@ -1424,6 +1428,7 @@ class jmapgen_spawn_item : public jmapgen_piece
 {
     public:
         itype_id type;
+        std::string variant;
         jmapgen_int amount;
         jmapgen_int chance;
         std::set<flag_id> flags;
@@ -1432,6 +1437,9 @@ class jmapgen_spawn_item : public jmapgen_piece
             , amount( jsi, "amount", 1, 1 )
             , chance( jsi, "chance", 100, 100 )
             , flags( jsi.get_tags<flag_id>( "custom-flags" ) ) {
+            if( jsi.has_string( "variant" ) ) {
+                variant = jsi.get_string( "variant" );
+            }
             // Itemgroups apply migrations when being loaded, but we need to migrate
             // individual items here.
             type = item_controller->migrate_id( type );
@@ -1449,7 +1457,7 @@ class jmapgen_spawn_item : public jmapgen_piece
             int spawn_count = ( c == 100 ) ? 1 : roll_remainder( c * spawn_rate / 100.0f );
             for( int i = 0; i < spawn_count; i++ ) {
                 dat.m.spawn_item( point( x.get(), y.get() ), type, amount.get(),
-                                  0, calendar::start_of_cataclysm, 0, flags );
+                                  0, calendar::start_of_cataclysm, 0, flags, variant );
             }
         }
 };
@@ -2968,8 +2976,6 @@ void map::draw_map( mapgendata &dat )
             draw_triffid( dat );
         } else if( is_ot_match( "spider", terrain_type, ot_match_type::prefix ) ) {
             draw_spider_pit( dat );
-        } else if( is_ot_match( "spiral", terrain_type, ot_match_type::prefix ) ) {
-            draw_spiral( dat );
         } else if( is_ot_match( "temple", terrain_type, ot_match_type::prefix ) ) {
             draw_temple( dat );
         } else if( is_ot_match( "mine", terrain_type, ot_match_type::prefix ) ) {
@@ -4381,20 +4387,6 @@ void map::draw_mine( mapgendata &dat )
                 }
             }
             break;
-
-            case 6: { // Spiral
-                const int orx = rng( SEEX - 4, SEEX ), ory = rng( SEEY - 4, SEEY );
-                line( this, t_rock, point( orx, ory ), point( orx + 5, ory ) );
-                line( this, t_rock, point( orx + 5, ory ), point( orx + 5, ory + 5 ) );
-                line( this, t_rock, point( orx + 1, ory + 5 ), point( orx + 5, ory + 5 ) );
-                line( this, t_rock, point( orx + 1, ory + 2 ), point( orx + 1, ory + 4 ) );
-                line( this, t_rock, point( orx + 1, ory + 2 ), point( orx + 3, ory + 2 ) );
-                ter_set( point( orx + 3, ory + 3 ), t_rock );
-                add_item( point( orx + 2, ory + 3 ), item::make_corpse() );
-                place_items( item_group_id( "mine_equipment" ), 60, point( orx + 2, ory + 3 ),
-                             point( orx + 2, ory + 3 ), false, calendar::start_of_cataclysm );
-            }
-            break;
         }
 
         if( terrain_type == "mine_down" ) { // Don't forget to build a slope down!
@@ -4531,42 +4523,26 @@ void map::draw_mine( mapgendata &dat )
                 }
             }
         }
-        std::vector<direction> face; // Which walls are solid, and can be a facing?
+
         // Now draw the entrance(s)
         if( dat.north() == "mine" ) {
             square( this, t_rock_floor, point( SEEX, 0 ), point( SEEX + 1, 3 ) );
-        } else {
-            face.push_back( direction::NORTH );
         }
 
         if( dat.east()  == "mine" ) {
             square( this, t_rock_floor, point( SEEX * 2 - 4, SEEY ), point( EAST_EDGE, SEEY + 1 ) );
-        } else {
-            face.push_back( direction::EAST );
         }
 
         if( dat.south() == "mine" ) {
             square( this, t_rock_floor, point( SEEX, SEEY * 2 - 4 ), point( SEEX + 1, SOUTH_EDGE ) );
-        } else {
-            face.push_back( direction::SOUTH );
         }
 
         if( dat.west()  == "mine" ) {
             square( this, t_rock_floor, point( 0, SEEY ), point( 3, SEEY + 1 ) );
-        } else {
-            face.push_back( direction::WEST );
         }
 
         // Now, pick and generate a type of finale!
-        int rn = 0;
-        if( face.empty() ) {
-            rn = rng( 1, 3 );  // Amigara fault is not valid
-        } else {
-            rn = rng( 1, 4 );
-        }
-
-        computer *tmpcomp = nullptr;
-        switch( rn ) {
+        switch( rng( 1, 2 ) ) {
             case 1: { // Wyrms
                 const int x = rng( SEEX, SEEX + 1 ), y = rng( SEEY, SEEY + 1 );
                 ter_set( point( x, y ), t_pedestal_wyrm );
@@ -4588,114 +4564,8 @@ void map::draw_mine( mapgendata &dat )
                                 relic_procgen_id( "netherum_tunnels" ) );
             }
             break;
-
-            case 3: { // Spiral down
-                line( this, t_rock,  point( 5, 5 ),  point( 5, 18 ) );
-                line( this, t_rock,  point( 5, 5 ), point( 18, 5 ) );
-                line( this, t_rock, point( 18, 5 ), point( 18, 18 ) );
-                line( this, t_rock,  point( 8, 18 ), point( 18, 18 ) );
-                line( this, t_rock,  point( 8, 8 ),  point( 8, 18 ) );
-                line( this, t_rock,  point( 8, 8 ), point( 15, 8 ) );
-                line( this, t_rock, point( 15, 8 ), point( 15, 15 ) );
-                line( this, t_rock, point( 10, 15 ), point( 15, 15 ) );
-                line( this, t_rock, point( 10, 10 ), point( 10, 15 ) );
-                line( this, t_rock, point( 10, 10 ), point( 13, 10 ) );
-                line( this, t_rock, point( 13, 10 ), point( 13, 13 ) );
-                ter_set( point( 12, 13 ), t_rock );
-                ter_set( point( 12, 12 ), t_slope_down );
-                ter_set( point( 12, 11 ), t_slope_down );
-            }
-            break;
-
-            case 4: { // Amigara fault
-                // Construct the fault on the appropriate face
-                switch( random_entry( face ) ) {
-                    case direction::NORTH:
-                        square( this, t_rock, point_zero, point( EAST_EDGE, 4 ) );
-                        line( this, t_fault, point( 4, 4 ), point( SEEX * 2 - 5, 4 ) );
-                        break;
-                    case direction::EAST:
-                        square( this, t_rock, point( SEEX * 2 - 5, 0 ), point( SOUTH_EDGE, EAST_EDGE ) );
-                        line( this, t_fault, point( SEEX * 2 - 5, 4 ), point( SEEX * 2 - 5, SEEY * 2 - 5 ) );
-                        break;
-                    case direction::SOUTH:
-                        square( this, t_rock, point( 0, SEEY * 2 - 5 ), point( EAST_EDGE, SOUTH_EDGE ) );
-                        line( this, t_fault, point( 4, SEEY * 2 - 5 ), point( SEEX * 2 - 5, SEEY * 2 - 5 ) );
-                        break;
-                    case direction::WEST:
-                        square( this, t_rock, point_zero, point( 4, SOUTH_EDGE ) );
-                        line( this, t_fault, point( 4, 4 ), point( 4, SEEY * 2 - 5 ) );
-                        break;
-                    default:
-                        break;
-                }
-
-                furn_set( point( SEEX, SEEY ), furn_str_id( "f_console" ) );
-                tmpcomp = add_computer( tripoint( SEEX,  SEEY, abs_sub.z ), _( "NEPowerOS" ), 0 );
-                tmpcomp->add_option( _( "Read Logs" ), COMPACT_AMIGARA_LOG, 0 );
-                tmpcomp->add_option( _( "Initiate Tremors" ), COMPACT_AMIGARA_START, 4 );
-                tmpcomp->add_failure( COMPFAIL_AMIGARA );
-            }
-            break;
         }
 
-    }
-}
-
-void map::draw_spiral( const mapgendata &dat )
-{
-    const oter_id &terrain_type = dat.terrain_type();
-    if( terrain_type == "spiral_hub" ) {
-        fill_background( this, t_rock_floor );
-        line( this, t_rock, point( 23, 0 ), point( 23, 23 ) );
-        line( this, t_rock,  point( 2, 23 ), point( 23, 23 ) );
-        line( this, t_rock,  point( 2, 4 ),  point( 2, 23 ) );
-        line( this, t_rock,  point( 2, 4 ), point( 18, 4 ) );
-        line( this, t_rock, point( 18, 4 ), point( 18, 18 ) ); // bad
-        line( this, t_rock,  point( 6, 18 ), point( 18, 18 ) );
-        line( this, t_rock,  point( 6, 7 ),  point( 6, 18 ) );
-        line( this, t_rock,  point( 6, 7 ), point( 15, 7 ) );
-        line( this, t_rock, point( 15, 7 ), point( 15, 15 ) );
-        line( this, t_rock,  point( 8, 15 ), point( 15, 15 ) );
-        line( this, t_rock,  point( 8, 9 ),  point( 8, 15 ) );
-        line( this, t_rock,  point( 8, 9 ), point( 13, 9 ) );
-        line( this, t_rock, point( 13, 9 ), point( 13, 13 ) );
-        line( this, t_rock, point( 10, 13 ), point( 13, 13 ) );
-        line( this, t_rock, point( 10, 11 ), point( 10, 13 ) );
-        square( this, t_slope_up, point( 11, 11 ), point( 12, 12 ) );
-        rotate( rng( 0, 3 ) );
-    } else if( terrain_type == "spiral" ) {
-        fill_background( this, t_rock_floor );
-        const int num_spiral = rng( 1, 4 );
-        std::list<point> offsets;
-        const int spiral_width = 8;
-        // Divide the room into quadrants, and place a spiral origin
-        // at a random offset within each quadrant.
-        for( int x = 0; x < 2; ++x ) {
-            for( int y = 0; y < 2; ++y ) {
-                const int x_jitter = rng( 0, SEEX - spiral_width );
-                const int y_jitter = rng( 0, SEEY - spiral_width );
-                offsets.push_back( point( ( x * SEEX ) + x_jitter,
-                                          ( y * SEEY ) + y_jitter ) );
-            }
-        }
-
-        // Randomly place from 1 - 4 of the spirals at the chosen offsets.
-        for( int i = 0; i < num_spiral; i++ ) {
-            const point chosen_point = random_entry_removed( offsets );
-            const int orx = chosen_point.x;
-            const int ory = chosen_point.y;
-
-            line( this, t_rock, point( orx, ory ), point( orx + 5, ory ) );
-            line( this, t_rock, point( orx + 5, ory ), point( orx + 5, ory + 5 ) );
-            line( this, t_rock, point( orx + 1, ory + 5 ), point( orx + 5, ory + 5 ) );
-            line( this, t_rock, point( orx + 1, ory + 2 ), point( orx + 1, ory + 4 ) );
-            line( this, t_rock, point( orx + 1, ory + 2 ), point( orx + 3, ory + 2 ) );
-            ter_set( point( orx + 3, ory + 3 ), t_rock );
-            ter_set( point( orx + 2, ory + 3 ), t_rock_floor );
-            place_items( item_group_id( "spiral" ), 60, point( orx + 2, ory + 3 ),
-                         point( orx + 2, ory + 3 ), false, calendar::turn_zero );
-        }
     }
 }
 
