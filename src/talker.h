@@ -324,8 +324,5 @@ class talker
         virtual bool wielded_with_flag( const flag_id & ) const {
             return false;
         }
-        virtual units::energy power_cur() const {
-            return 0_kJ;
-        }
 };
 #endif // CATA_SRC_TALKER_H
